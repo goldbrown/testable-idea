@@ -44,7 +44,11 @@
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <keyboard-shortcut keymap="$default" first-keystroke="meta M"/>
         </action>
-        <action id="org.testable.idea.action.GenerateMethodToTestCaseAction" class="org.testable.idea.action.GenerateMethodToTestCaseAction">
+        <action id="org.testable.idea.action.GenerateDefaultValueTestCaseAction" class="org.testable.idea.action.GenerateDefaultValueTestCaseAction">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="meta T"/>
+        </action>
+        <action id="org.testable.idea.action.GenerateRandomValueTestCaseAction" class="org.testable.idea.action.GenerateRandomValueTestCaseAction">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <keyboard-shortcut keymap="$default" first-keystroke="meta T"/>
         </action>

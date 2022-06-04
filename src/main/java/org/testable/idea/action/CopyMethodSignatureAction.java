@@ -15,6 +15,7 @@ import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeSpec;
 import org.jetbrains.annotations.NotNull;
+import org.testable.idea.enums.BodyTypeEnum;
 import org.testable.idea.helper.GenerationTestCaseHelper;
 
 import java.util.List;
@@ -46,7 +47,7 @@ public class CopyMethodSignatureAction extends AnAction {
         }
 
 
-        MethodSpec methodSpec = GenerationTestCaseHelper.getInstance().transformMethod(method, method.getContainingClass().getQualifiedName());
+        MethodSpec methodSpec = GenerationTestCaseHelper.getInstance().transformMethod(method, method.getContainingClass().getQualifiedName(), BodyTypeEnum.DEFAULT_BODY);
         PsiJavaFile psiJavaFile = (PsiJavaFile) psiFile;
 
         JavaFile javaFile = JavaFile.builder(psiJavaFile.getPackageName(), TypeSpec.classBuilder("Temp").addMethod(methodSpec).build())

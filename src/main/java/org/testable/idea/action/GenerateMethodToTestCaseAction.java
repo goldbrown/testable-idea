@@ -20,6 +20,7 @@ import com.squareup.javapoet.TypeSpec;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
+import org.testable.idea.enums.BodyTypeEnum;
 import org.testable.idea.helper.GenerationTestCaseHelper;
 
 import javax.lang.model.element.Modifier;
@@ -36,7 +37,7 @@ import org.testable.idea.helper.intellij.CreateTestUtils;
 /**
  * @author jim
  */
-public class GenerateMethodToTestCaseAction extends AnAction {
+public abstract class GenerateMethodToTestCaseAction extends AnAction {
     private static final Logger LOG = Logger.getInstance(GenerateMethodToTestCaseAction.class);
 
     @Override
@@ -85,7 +86,7 @@ public class GenerateMethodToTestCaseAction extends AnAction {
         }
 
         if (testClass == null) {
-            GenerationTestCaseHelper.getInstance().generateTest(containingClass, Lists.newArrayList(psiMethod));
+            GenerationTestCaseHelper.getInstance().generateTest(containingClass, Lists.newArrayList(psiMethod), BodyTypeEnum.DEFAULT_BODY);
             return;
         }
 
@@ -118,6 +119,8 @@ public class GenerateMethodToTestCaseAction extends AnAction {
                 && editor.getSelectionModel().hasSelection() );
     }
 
+    protected abstract BodyTypeEnum getBodyTypeEnum();
+
     private void insertMockMethod(PsiClass testClass, PsiMethod selectedMethod) {
         Project project = testClass.getProject();
         PsiClass selectedClass = selectedMethod.getContainingClass();
@@ -127,7 +130,7 @@ public class GenerateMethodToTestCaseAction extends AnAction {
         PsiElementFactory factory = JavaPsiFacade.getInstance(project).getElementFactory();
         AtomicReference<String> tip = new AtomicReference<>("");
         WriteCommandAction.runWriteCommandAction(project, () -> {
-            MethodSpec methodSpec = GenerationTestCaseHelper.getInstance().transformMethod(selectedMethod, selectedClass.getQualifiedName());
+            MethodSpec methodSpec = GenerationTestCaseHelper.getInstance().transformMethod(selectedMethod, selectedClass.getQualifiedName(), getBodyTypeEnum());
 
             if (hasInnerMockClass(testClass)) {
                 PsiElement insert = factory.createMethodFromText(methodSpec.toString(), selectedMethod);

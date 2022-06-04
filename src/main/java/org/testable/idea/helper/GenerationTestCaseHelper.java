@@ -1,6 +1,7 @@
 package org.testable.idea.helper;
 
 import com.alibaba.testable.core.annotation.MockInvoke;
+import com.google.common.base.CaseFormat;
 import com.google.common.collect.Lists;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
@@ -19,9 +20,12 @@ import com.squareup.javapoet.*;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.testable.idea.enums.BodyTypeEnum;
 import org.testable.idea.helper.intellij.CreateTestUtils;
 import org.testable.idea.utils.ClassNameUtils;
 import org.testable.idea.utils.JavaPoetClassNameUtils;
+import uk.co.jemos.podam.api.PodamFactory;
+import uk.co.jemos.podam.api.PodamFactoryImpl;
 
 import javax.lang.model.element.Modifier;
 import java.io.IOException;
@@ -44,16 +48,18 @@ public class GenerationTestCaseHelper {
 
     private static final Logger LOG = Logger.getInstance(GenerationTestCaseHelper.class);
     private static final GenerationTestCaseHelper INSTANCE = new GenerationTestCaseHelper();
+    private static final String DEFAULT_BEAN_NAME = "bean";
+//    private static PodamFactory podamFactory = new PodamFactoryImpl();
 
     public static GenerationTestCaseHelper getInstance() {
         return INSTANCE;
     }
 
     public void generateTest(PsiClass bizService) {
-        generateTest(bizService, Lists.newArrayList());
+        generateTest(bizService, Lists.newArrayList(), BodyTypeEnum.DEFAULT_BODY);
     }
 
-    public void generateTest(PsiClass bizService, List<PsiMethod> methods) {
+    public void generateTest(PsiClass bizService, List<PsiMethod> methods, BodyTypeEnum bodyTypeEnum) {
         Module srcModule = ModuleUtilCore.findModuleForPsiElement(bizService);
         if (srcModule == null) {
             return;
@@ -79,7 +85,7 @@ public class GenerationTestCaseHelper {
         AtomicReference<String> tip = new AtomicReference<>("");
         WriteCommandAction.runWriteCommandAction(openProject, () -> {
             try {
-                Path testFilePath = generationTestFile(bizService, testVirtualFile, methods);
+                Path testFilePath = generationTestFile(bizService, testVirtualFile, methods, bodyTypeEnum);
                 VfsUtil.markDirtyAndRefresh(false, true, true, ProjectRootManager.getInstance(openProject).getContentRoots());
 //                NotificationGroupManager.getInstance().getNotificationGroup("Custom Notification Group")
 //                        .createNotification(testJavaFile + " File created success", NotificationType.INFORMATION)
@@ -98,7 +104,7 @@ public class GenerationTestCaseHelper {
         Messages.showInfoMessage(openProject, tip.get(), "Create Test Class");
     }
 
-    public Path generationTestFile(PsiClass bizService, VirtualFile testVirtualFile, List<PsiMethod> selectMethodList) throws IOException {
+    public Path generationTestFile(PsiClass bizService, VirtualFile testVirtualFile, List<PsiMethod> selectMethodList, BodyTypeEnum bodyTypeEnum) throws IOException {
         String qualifiedName = bizService.getQualifiedName();
         String simpleClassName = ClassNameUtils.getClassNameFromClassFullName(qualifiedName);
         PsiMethod[] methods = bizService.getMethods();
@@ -111,7 +117,7 @@ public class GenerationTestCaseHelper {
                 .addType(TypeSpec.classBuilder("Mock")
                         .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                         // not required generation the method ...
-                        .addMethods(transformMethod(selectMethodList.toArray(new PsiMethod[0]), simpleClassName))
+                        .addMethods(transformMethod(selectMethodList.toArray(new PsiMethod[0]), simpleClassName, bodyTypeEnum))
                         .build()
                 )
                 .build();
@@ -122,14 +128,17 @@ public class GenerationTestCaseHelper {
         return javaFile.writeToPath(Paths.get(testVirtualFile.getPath()));
     }
 
-    public List<MethodSpec> transformMethod(PsiMethod[] methods, String targetClassName) {
+    public List<MethodSpec> transformMethod(PsiMethod[] methods, String targetClassName, BodyTypeEnum bodyTypeEnum) {
 
         return Arrays.stream(methods)
-                .map(v -> transformMethod(v, targetClassName))
+                .map(v -> transformMethod(v, targetClassName, bodyTypeEnum))
                 .collect(Collectors.toList());
     }
 
-    public MethodSpec transformMethod(PsiMethod method, String targetClassName) {
+    public MethodSpec transformMethod(PsiMethod method, String targetClassName, BodyTypeEnum bodyTypeEnum) {
+        if (bodyTypeEnum == null) {
+            bodyTypeEnum = BodyTypeEnum.DEFAULT_BODY;
+        }
         TypeName returnType = Optional.ofNullable(method.getReturnType())
                 .map(JavaPoetClassNameUtils::guessType)
                 .orElse(TypeName.VOID);
@@ -144,7 +153,7 @@ public class GenerationTestCaseHelper {
                 .addTypeVariables(transformTypeVariables(method.getTypeParameterList()))
                 .addAnnotation(mockInvokeAnnotation)
                 .addParameters(transformParameter(method.getParameterList().getParameters()))
-                .addCode(returnBody(returnType))
+                .addCode(returnBody(returnType, bodyTypeEnum))
                 .returns(returnType)
                 .addModifiers(transformModifier(method.getModifierList()))
                 .build();
@@ -164,7 +173,54 @@ public class GenerationTestCaseHelper {
                 .collect(Collectors.toList());
     }
 
-    private CodeBlock returnBody(TypeName returnType) {
+    private CodeBlock returnBody(TypeName returnType, BodyTypeEnum bodyTypeEnum) {
+        if (bodyTypeEnum == BodyTypeEnum.RANDOM_VALUE_BODY) {
+            return getRandomBody(returnType);
+        } else {
+            return getDefaultBody(returnType);
+        }
+    }
+
+    private CodeBlock getRandomBody(TypeName returnType) {
+        if (returnType == TypeName.VOID) {
+            return CodeBlock.of("");
+        }
+
+        if (!returnType.isPrimitive()) {
+            String simpleName = convert2SimpleName(returnType.toString());
+            return CodeBlock.builder()
+                    .add(CodeBlock.of("uk.co.jemos.podam.api.PodamFactory factory = new uk.co.jemos.podam.api.PodamFactoryImpl();"))
+                    .add(CodeBlock.of(returnType.toString() + " " + simpleName + " = " + "factory.manufacturePojo(" + returnType.toString() + ".class);"))
+                    .add(CodeBlock.of("return " + simpleName + ";"))
+                    .build();
+        }
+        return Match(returnType).of(
+                Case($(v -> v == TypeName.BOOLEAN), v -> CodeBlock.of("return false;")),
+                Case($(v -> v == TypeName.BYTE), v -> CodeBlock.of("return (byte)0;")),
+                Case($(v -> v == TypeName.SHORT), v -> CodeBlock.of("return (short)0;")),
+                Case($(v -> v == TypeName.INT), v -> CodeBlock.of("return 0;")),
+                Case($(v -> v == TypeName.LONG), v -> CodeBlock.of("return 0L;")),
+                Case($(v -> v == TypeName.CHAR), v -> CodeBlock.of("return (char)0;")),
+                Case($(v -> v == TypeName.FLOAT), v -> CodeBlock.of("return 0.0f;")),
+                Case($(v -> v == TypeName.DOUBLE), v -> CodeBlock.of("return 0.0d;")),
+                Case($(), v -> null)
+        );
+    }
+
+    private String convert2SimpleName(String fullName) {
+        if (StringUtils.isEmpty(fullName) || !fullName.contains(".")) {
+            return DEFAULT_BEAN_NAME;
+        }
+        int index = fullName.lastIndexOf(".");
+        if (index > -1 && index < fullName.length() - 1) {
+            String substring = fullName.substring(index + 1);
+            return CaseFormat.UPPER_CAMEL.to(CaseFormat.LOWER_CAMEL, substring);
+        }
+        return DEFAULT_BEAN_NAME;
+
+    }
+
+    private CodeBlock getDefaultBody(TypeName returnType) {
         if (returnType == TypeName.VOID) {
             return CodeBlock.of("");
         }
